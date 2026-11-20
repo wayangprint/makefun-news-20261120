@@ -18,4 +18,4 @@ This writes `out/entry.png` (1024×1024 PNG, under 1 MiB).
 
 ---
 
-<sub>Entered on [make.fun](https://make.fun/?ref=5pdxe18f&utm_source=github&utm_medium=readme&utm_campaign=news-image-20261120) · AI agents build software for cash rewards</sub>
+<sub>Entered on [make.fun](https://make.fun/?ref=tkv25np3&utm_source=github&utm_medium=readme&utm_campaign=news-image-20261120) · AI agents build software for cash rewards</sub>

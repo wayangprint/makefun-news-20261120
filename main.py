@@ -17,9 +17,11 @@ Stories (all reported 20 Nov 2026, any timezone):
     Odisha; Europe ready for talks with Russia.
 """
 
+import argparse
 import math
 import os
 import struct
+import sys
 import zlib
 
 W = 1024
@@ -38,90 +40,105 @@ GOLD = (250, 204, 21)
 GREEN = (22, 163, 74)
 
 # ---------------------------------------------------------------------------
-# 5x7 pixel font, hand-typed as 7 row bitmasks (bit 4 = leftmost cell).
+# 5x7 pixel font. Each glyph is a tuple of seven 5-character rows, '#' for
+# ink and '.' for blank, read top to bottom. Rows stored as text (instead of
+# row bitmasks) keep the table readable: the letter is visible in the source.
 # A-Z, 0-9 and punctuation. Uppercase only; text is uppercased on draw.
 # ---------------------------------------------------------------------------
 GLYPHS = {
-    "A": (14, 17, 17, 31, 17, 17, 17),
-    "B": (30, 17, 17, 30, 17, 17, 30),
-    "C": (14, 17, 16, 16, 16, 17, 14),
-    "D": (30, 17, 17, 17, 17, 17, 30),
-    "E": (31, 16, 16, 30, 16, 16, 31),
-    "F": (31, 16, 16, 30, 16, 16, 16),
-    "G": (14, 17, 16, 23, 17, 17, 15),
-    "H": (17, 17, 17, 31, 17, 17, 17),
-    "I": (14, 4, 4, 4, 4, 4, 14),
-    "J": (7, 2, 2, 2, 2, 18, 12),
-    "K": (17, 18, 20, 24, 20, 18, 17),
-    "L": (16, 16, 16, 16, 16, 16, 31),
-    "M": (17, 27, 21, 21, 17, 17, 17),
-    "N": (17, 25, 21, 19, 17, 17, 17),
-    "O": (14, 17, 17, 17, 17, 17, 14),
-    "P": (30, 17, 17, 30, 16, 16, 16),
-    "Q": (14, 17, 17, 17, 21, 18, 13),
-    "R": (30, 17, 17, 30, 20, 18, 17),
-    "S": (15, 16, 16, 14, 1, 1, 30),
-    "T": (31, 4, 4, 4, 4, 4, 4),
-    "U": (17, 17, 17, 17, 17, 17, 14),
-    "V": (17, 17, 17, 17, 17, 10, 4),
-    "W": (17, 17, 17, 21, 21, 21, 10),
-    "X": (17, 17, 10, 4, 10, 17, 17),
-    "Y": (17, 17, 10, 4, 4, 4, 4),
-    "Z": (31, 1, 2, 4, 8, 16, 31),
-    "0": (14, 17, 19, 21, 25, 17, 14),
-    "1": (4, 12, 4, 4, 4, 4, 14),
-    "2": (14, 17, 1, 6, 8, 16, 31),
-    "3": (31, 2, 4, 2, 1, 17, 14),
-    "4": (2, 6, 10, 18, 31, 2, 2),
-    "5": (31, 16, 30, 1, 1, 17, 14),
-    "6": (6, 8, 16, 30, 17, 17, 14),
-    "7": (31, 1, 2, 4, 8, 8, 8),
-    "8": (14, 17, 17, 14, 17, 17, 14),
-    "9": (14, 17, 17, 15, 1, 2, 12),
-    ".": (0, 0, 0, 0, 0, 12, 12),
-    ",": (0, 0, 0, 0, 12, 4, 8),
-    ":": (0, 12, 12, 0, 12, 12, 0),
-    "'": (4, 4, 8, 0, 0, 0, 0),
-    "-": (0, 0, 0, 14, 0, 0, 0),
-    "!": (4, 4, 4, 4, 4, 0, 4),
-    "?": (14, 17, 1, 6, 4, 0, 4),
-    "(": (2, 4, 8, 8, 8, 4, 2),
-    ")": (8, 4, 2, 2, 2, 4, 8),
-    "%": (25, 26, 2, 4, 8, 11, 19),
-    "$": (4, 15, 20, 14, 5, 30, 4),
-    "&": (12, 18, 20, 8, 21, 18, 13),
-    "/": (1, 2, 2, 4, 8, 8, 16),
-    "+": (0, 4, 4, 31, 4, 4, 0),
-    "\u2022": (0, 0, 0, 12, 12, 0, 0),
-    " ": (0, 0, 0, 0, 0, 0, 0),
+    "A": (".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"),
+    "B": ("####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."),
+    "C": (".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."),
+    "D": ("####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."),
+    "E": ("#####", "#....", "#....", "####.", "#....", "#....", "#####"),
+    "F": ("#####", "#....", "#....", "####.", "#....", "#....", "#...."),
+    "G": (".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####"),
+    "H": ("#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"),
+    "I": (".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."),
+    "J": ("..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."),
+    "K": ("#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"),
+    "L": ("#....", "#....", "#....", "#....", "#....", "#....", "#####"),
+    "M": ("#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"),
+    "N": ("#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#"),
+    "O": (".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
+    "P": ("####.", "#...#", "#...#", "####.", "#....", "#....", "#...."),
+    "Q": (".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"),
+    "R": ("####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"),
+    "S": (".####", "#....", "#....", ".###.", "....#", "....#", "####."),
+    "T": ("#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."),
+    "U": ("#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
+    "V": ("#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."),
+    "W": ("#...#", "#...#", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#."),
+    "X": ("#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"),
+    "Y": ("#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."),
+    "Z": ("#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"),
+    "0": (".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."),
+    "1": ("..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."),
+    "2": (".###.", "#...#", "....#", "..##.", ".#...", "#....", "#####"),
+    "3": ("#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."),
+    "4": ("...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."),
+    "5": ("#####", "#....", "####.", "....#", "....#", "#...#", ".###."),
+    "6": ("..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."),
+    "7": ("#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."),
+    "8": (".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."),
+    "9": (".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."),
+    ".": (".....", ".....", ".....", ".....", ".....", ".##..", ".##.."),
+    ",": (".....", ".....", ".....", ".....", ".##..", "..#..", ".#..."),
+    ":": (".....", ".##..", ".##..", ".....", ".##..", ".##..", "....."),
+    "'": ("..#..", "..#..", ".#...", ".....", ".....", ".....", "....."),
+    "-": (".....", ".....", ".....", ".###.", ".....", ".....", "....."),
+    "!": ("..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."),
+    "?": (".###.", "#...#", "....#", "..##.", "..#..", ".....", "..#.."),
+    "(": ("...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."),
+    ")": (".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."),
+    "%": ("##..#", "##.#.", "...#.", "..#..", ".#...", ".#.##", "#..##"),
+    "$": ("..#..", ".####", "#.#..", ".###.", "..#.#", "####.", "..#.."),
+    "&": (".##..", "#..#.", "#.#..", ".#...", "#.#.#", "#..#.", ".##.#"),
+    "/": ("....#", "...#.", "...#.", "..#..", ".#...", ".#...", "#...."),
+    "+": (".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."),
+    "\u2022": (".....", ".....", ".....", ".##..", ".##..", ".....", "....."),
+    " ": (".....", ".....", ".....", ".....", ".....", ".....", "....."),
 }
 
 
 class Raster:
-    """RGB canvas backed by one flat bytearray."""
+    """RGB canvas backed by one flat bytearray.
+
+    A run of identical colour is stamped in with one slice assignment per
+    row instead of one byte at a time; the bytes landed are the same.
+    """
 
     def __init__(self, w, h, bg):
         self.w = w
         self.h = h
         self.buf = bytearray(bg * (w * h))
 
+    def _span(self, x, y, w):
+        """Clipped (start_x, length) of a horizontal run, or None."""
+        if y < 0 or y >= self.h:
+            return None
+        x0 = max(0, x)
+        x1 = min(self.w, x + w)
+        if x1 <= x0:
+            return None
+        return x0, x1 - x0
+
     def dot(self, x, y, color):
-        if 0 <= x < self.w and 0 <= y < self.h:
-            i = (y * self.w + x) * 3
-            self.buf[i] = color[0]
-            self.buf[i + 1] = color[1]
-            self.buf[i + 2] = color[2]
+        span = self._span(x, y, 1)
+        if span is not None:
+            i = (y * self.w + span[0]) * 3
+            self.buf[i:i + 3] = bytes(color)
 
     def box(self, x, y, w, h, color):
-        x0, y0 = max(0, x), max(0, y)
-        x1, y1 = min(self.w, x + w), min(self.h, y + h)
-        for yy in range(y0, y1):
-            base = (yy * self.w + x0) * 3
-            for xx in range(x0, x1):
-                i = base + (xx - x0) * 3
-                self.buf[i] = color[0]
-                self.buf[i + 1] = color[1]
-                self.buf[i + 2] = color[2]
+        if w <= 0 or h <= 0:
+            return
+        run = bytes(color)
+        for yy in range(max(0, y), min(self.h, y + h)):
+            span = self._span(x, yy, w)
+            if span is None:
+                continue
+            i = (yy * self.w + span[0]) * 3
+            self.buf[i:i + 3 * span[1]] = run * span[1]
 
     def hbar(self, x, y, w, color, thick=1):
         self.box(x, y, w, thick, color)
@@ -206,11 +223,10 @@ def blit(r, x, y, text, scale, color):
         if rows is None:
             cx += 6 * scale
             continue
-        for row in range(7):
-            bits = rows[row]
-            for col in range(5):
-                if bits & (1 << (4 - col)):
-                    r.box(cx + col * scale, y + row * scale,
+        for row_i, row in enumerate(rows):
+            for col, cell in enumerate(row):
+                if cell == "#":
+                    r.box(cx + col * scale, y + row_i * scale,
                           scale, scale, color)
         cx += 6 * scale
     return cx
@@ -319,16 +335,29 @@ def _png_chunk(kind, data):
 
 def write_png(r, path):
     ihdr = struct.pack(">IIBBBBB", W, H, 8, 2, 0, 0, 0)
-    raw = bytearray()
-    for y in range(H):
-        raw.append(0)
-        raw += r.buf[y * W * 3:(y + 1) * W * 3]
-    png = b"\x89PNG\r\n\x1a\n"
-    png += _png_chunk(b"IHDR", ihdr)
-    png += _png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-    png += _png_chunk(b"IEND", b"")
+    scanlines = [b"\x00" + bytes(r.buf[y * W * 3:(y + 1) * W * 3])
+                 for y in range(H)]
+    png = (b"\x89PNG\r\n\x1a\n"
+           + _png_chunk(b"IHDR", ihdr)
+           + _png_chunk(b"IDAT", zlib.compress(b"".join(scanlines), 9))
+           + _png_chunk(b"IEND", b""))
     with open(path, "wb") as f:
         f.write(png)
+
+
+def rule(r, y, thick, color, x=32, w=960):
+    """Full-width horizontal rule."""
+    r.box(x, y, w, thick, color)
+
+
+def story_card(r, sx, sy, accent, headline, summary, pic):
+    """One supporting-story card in the 2x2 grid."""
+    r.box(sx, sy, 472, 188, CARD)
+    r.frame(sx, sy, 472, 188, INK, 2)
+    r.box(sx, sy, 472, 6, accent)
+    blit_para(r, sx + 16, sy + 16, headline, 3, INK, 440, gap=4)
+    pic(r, sx + 16, sy + 100)
+    blit_para(r, sx + 104, sy + 102, summary, 2, INK, 352, gap=3)
 
 
 # ---------------------------------------------------------------------------
@@ -339,11 +368,11 @@ def draw_page():
 
     # Masthead
     blit_centred(r, 28, "THE WORLD IN ONE PAGE", 8, INK)
-    r.box(32, 104, 960, 6, RED)
-    r.box(32, 114, 960, 2, INK)
+    rule(r, 104, 6, RED)
+    rule(r, 114, 2, INK)
     blit_centred(r, 128, "FRIDAY 20 NOVEMBER 2026", 4, INK)
     blit_centred(r, 164, "ONE DAY - ONE IMAGE - THE WORLD'S NEWS", 2, RED)
-    r.box(32, 192, 960, 2, INK)
+    rule(r, 192, 2, INK)
 
     # Lead story box
     r.box(32, 200, 960, 250, CARD)
@@ -381,12 +410,7 @@ def draw_page():
          pic_bolt),
     ]
     for sx, sy, accent, headline, summary, pic in stories:
-        r.box(sx, sy, 472, 188, CARD)
-        r.frame(sx, sy, 472, 188, INK, 2)
-        r.box(sx, sy, 472, 6, accent)
-        blit_para(r, sx + 16, sy + 16, headline, 3, INK, 440, gap=4)
-        pic(r, sx + 16, sy + 100)
-        blit_para(r, sx + 104, sy + 102, summary, 2, INK, 352, gap=3)
+        story_card(r, sx, sy, accent, headline, summary, pic)
 
     # Ticker bar
     r.box(32, 874, 960, 78, INK)
@@ -399,16 +423,85 @@ def draw_page():
               2, WHITE, 928, gap=4)
 
     # Footer
-    r.box(32, 962, 960, 2, INK)
+    rule(r, 962, 2, INK)
     blit_centred(r, 972, "SOURCES: BBC, REUTERS, AP, NYT - 20 NOV 2026",
                  2, GREY)
     return r
 
 
+def parse_args(argv=None):
+    """Command-line options for the front-page renderer.
+
+    --output picks the directory that receives entry.png (it wins over
+    MAKEFUN_OUTPUT_DIR); --check skips drawing and only inspects a PNG
+    that is already on disk, so a finished page can be re-examined
+    without redrawing it.
+    """
+    parser = argparse.ArgumentParser(
+        description="Draw the 20 Nov 2026 front page as entry.png.")
+    parser.add_argument("--output", metavar="DIR",
+                        help="directory to write entry.png into")
+    parser.add_argument("--check", action="store_true",
+                        help="only verify an existing entry.png")
+    return parser.parse_args(argv)
+
+
+def verify_output(path):
+    """Read a finished PNG back and check it looks like our page.
+
+    Confirms the PNG signature, the IHDR width and height, and that the
+    file is neither empty nor implausibly large for a 1024x1024 page.
+    Prints one line per check and returns True when all of them pass.
+    """
+    with open(path, "rb") as f:
+        data = f.read()
+    ok = True
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        print("signature: OK")
+    else:
+        print("signature: BAD")
+        ok = False
+    width, height = struct.unpack(">II", data[16:24])
+    if (width, height) == (W, H):
+        print("dimensions: OK (%dx%d)" % (width, height))
+    else:
+        print("dimensions: BAD (%dx%d)" % (width, height))
+        ok = False
+    size = len(data)
+    if 1000 < size < 1000000:
+        print("file size: OK (%d bytes)" % size)
+    else:
+        print("file size: BAD (%d bytes)" % size)
+        ok = False
+    return ok
+
+
+def print_stats(path):
+    """Print a few facts about the page that was just drawn.
+
+    Word count of the module docstring, glyph count of the pixel font,
+    and the size of the raster buffer, next to the finished file size.
+    Nothing here touches the drawing itself.
+    """
+    print("docstring words: %d" % len(__doc__.split()))
+    print("font glyphs: %d" % len(GLYPHS))
+    print("raster buffer: %d bytes" % (W * H * 3))
+    print("entry.png: %d bytes" % os.path.getsize(path))
+
+
 def main():
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    args = parse_args()
+    out_dir = args.output or os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
     os.makedirs(out_dir, exist_ok=True)
-    write_png(draw_page(), os.path.join(out_dir, "entry.png"))
+    path = os.path.join(out_dir, "entry.png")
+    if args.check:
+        if not os.path.exists(path):
+            print("missing: %s" % path)
+            sys.exit(1)
+        sys.exit(0 if verify_output(path) else 1)
+    write_png(draw_page(), path)
+    verify_output(path)
+    print_stats(path)
 
 
 if __name__ == "__main__":
